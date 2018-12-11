@@ -41,6 +41,82 @@ def bboxes_resize(bbox_ref, bboxes, name=None):
         return bboxes
 
 
+def bboxes_sort_all_classes(dict_scores, dict_bboxes, top_k=400, scope=None):
+    """Sort bounding boxes by decreasing order and keep only the top_k.
+    Arguments:
+        scores: Dictionary, item - batch_size x -1 Tensor float scores.
+        bboxes: Dictionary, item - batch_size x -1 x 4 Tensor bounding boxes.
+    """
+
+    def gather(bboxes, idxes):
+        bboxes_gather = tf.gather(bboxes, idxes)
+        return bboxes_gather
+
+    def bboxes_sort_one_class(scores, bboxes, top_k):
+        scores_sorted, idxes = tf.nn.top_k(scores, k=top_k, sorted=True)
+        bboxes_sorted = tf.map_fn(lambda x: gather(x[0], x[1]),
+                                  [bboxes, idxes],
+                                  dtype=bboxes.dtype,
+                                  parallel_iterations=10,
+                                  back_prop=False,
+                                  swap_memory=False,
+                                  infer_shape=True)
+        return scores_sorted, bboxes_sorted
+
+    with tf.name_scope(scope, 'detected_bboxes_sort', values=[dict_scores, dict_bboxes]):
+        dict_scores_sorted = {}
+        dict_bboxes_sorted = {}
+        for cls in dict_scores.keys():
+            scores_sorted, bboxes_sorted = bboxes_sort_one_class(dict_scores[cls],
+                                                                 dict_bboxes[cls],
+                                                                 top_k)
+            dict_scores_sorted[cls] = scores_sorted
+            dict_bboxes_sorted[cls] = bboxes_sorted
+        return dict_scores_sorted, dict_bboxes_sorted
+
+
+def bboxes_nms_all_classes(dict_scores_sorted, dict_bboxes_sorted, batch_size,
+                           nms_threshold=0.5, keep_top_k=200,
+                           scope=None):
+    """Apply non-maximum selection to bounding boxes.
+    Arguments:
+        dict_scores_sorted: Dictionary (class: scores), scores - batch x top_k.
+        dict_bboxes_sorted: Dictionary (class: bboxes), bboxes - batch x top_k x 4.
+    """
+
+    def bboxes_nms_one_class(scores_sorted, bboxes_sorted, batch_size,
+                             nms_threshold, keep_top_k):
+        scores_batches = []
+        bboxes_batches = []
+        for i in range(batch_size):
+            idxes = tf.image.non_max_suppression_padded(bboxes_sorted[i],
+                                                        scores_sorted[i],
+                                                        keep_top_k,
+                                                        nms_threshold,
+                                                        pad_to_max_output_size=True)
+            scores = tf.gather(scores_sorted[i], idxes)
+            bboxes = tf.gather(bboxes_sorted[i], idxes)
+
+            scores_batches.append(scores)
+            bboxes_batches.append(bboxes)
+        scores_batches = tf.stack(scores_batches, axis=0)
+        bboxes_batches = tf.stack(bboxes_batches, axis=0)
+        return scores_batches, bboxes_batches
+
+    with tf.name_scope(scope, 'bboxes_nms_all_classes'):
+        dict_scores_nms = {}
+        dict_bboxes_nms = {}
+        for cls in dict_scores_sorted.keys():
+            scores_nms, bboxes_nms = bboxes_nms_one_class(dict_scores_sorted[cls],
+                                                          dict_bboxes_sorted[cls],
+                                                          batch_size,
+                                                          keep_top_k,
+                                                          nms_threshold)
+            dict_scores_nms[cls] = scores_nms
+            dict_bboxes_nms[cls] = bboxes_nms
+        return dict_scores_nms, dict_bboxes_nms
+
+
 def bboxes_filter_overlap(labels, bboxes, threshold=0.5, assign_negative=False,
                           scope=None):
     """Filter out bounding boxes based on (relative) overlap with reference

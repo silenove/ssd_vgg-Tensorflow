@@ -14,7 +14,7 @@ import tensorflow as tf
 
 import math
 from collections import namedtuple
-from utils import network_util
+from utils import network_util, bbox_util
 
 slim = tf.contrib.slim
 
@@ -294,9 +294,16 @@ class SSDNet(object):
     def detected_bboxes(self, predictions, localizations, select_threshold=0.01,
                         nms_threshold=0.5):
         """Get the detected bounding boxes from SSD Model output."""
-        scores_select, bboxes_select = network_util.select_detected_bboxes(predictions,
+        scores_select, bboxes_select = network_util.select_detected_bboxes_all_classes(predictions,
                                                                            localizations,
                                                                            select_threshold)
+        dict_scores_sorted, dict_bboxes_sorted = bbox_util.bboxes_sort_all_classes(scores_select,
+                                                                          bboxes_select)
+        dict_scores_nms, dict_bboxes_nms = bbox_util.bboxes_nms_all_classes(dict_scores_sorted,
+                                                                           dict_bboxes_sorted,
+                                                                           self.ssd_params.batch_size,
+                                                                           nms_threshold)
+
 
 
 

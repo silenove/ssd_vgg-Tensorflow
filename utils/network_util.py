@@ -80,7 +80,7 @@ def encode_gtbboxes_from_one_layer(ssd_params,
     devi_y = (target_y - y_ref) / h_ref / ssd_params.prior_variance[0]
     devi_x = (target_x - x_ref) / w_ref / ssd_params.prior_variance[1]
     devi_h = tf.log(target_h / h_ref) / ssd_params.prior_variance[2]
-    devi_w = tf.log(target_w /  w_ref) / ssd_params.prior_variance[3]
+    devi_w = tf.log(target_w / w_ref) / ssd_params.prior_variance[3]
 
     target_loc = tf.stack([devi_y, devi_x, devi_h, devi_w], axis=-1)
     return anchor_labels, anchor_scores, target_loc
@@ -108,11 +108,11 @@ def encode_gtbboxes_from_all_layers(ssd_params,
         for layer in ssd_params.featmap_layers:
             with tf.name_scope('gtbboxes_encoder_%s' % layer):
                 labels, scores, loc = encode_gtbboxes_from_one_layer(ssd_params,
-                                                                       anchors_cords[layer],
-                                                                       gt_labels,
-                                                                       gt_bboxes,
-                                                                       matching_threshold,
-                                                                       dtype)
+                                                                     anchors_cords[layer],
+                                                                     gt_labels,
+                                                                     gt_bboxes,
+                                                                     matching_threshold,
+                                                                     dtype)
                 target_labels.append(labels)
                 target_scores.append(scores)
                 target_locs.append(loc)
@@ -139,11 +139,13 @@ def jaccard_between_anchors_and_gt(anchors, bbox):
     jaccard = tf.div(vol_inter, vol_union)
     return jaccard
 
+
 def abs_smooth_L1(x):
     if tf.less(tf.abs(x), 1):
         return 0.5 * tf.pow(x, 2)
     else:
         return tf.abs(x) - 0.5
+
 
 def decode_bboxes_from_all_layer(locs_pred, anchors,
                                  prior_scaling=[0.1, 0.1, 0.2, 0.2],
@@ -166,43 +168,55 @@ def decode_bboxes_from_all_layer(locs_pred, anchors,
 
         return tf.stack([ymin, xmin, ymax, xmax], axis=-1)
 
-def select_detected_bboxes(predictions, localization, num_classes,
-                           select_threshold=0.01,
-                           scope='detected_bboxes_select'):
-    """Select detected bboxes based on select_threshold.
+
+def select_detected_bboxes_every_class(predictions, localizations, num_classes,
+                                       select_threshold=0.01,
+                                       scope='detected_bboxes_select_every_class'):
+    """Select detected bboxes based on select_threshold, sort the detected bboxes
+    in every class.
     Arguments:
         predictions: batch_size x -1 x num_classes Tensor.
         localization: batch_size x -1 x 4 Tensor.
     """
-    with tf.name_scope(scope, values=[predictions, localization]):
-        scores_filt = {}
-        bboxes_filt = {}
+    with tf.name_scope(scope, values=[predictions, localizations]):
+        dict_scores_filt = {}
+        dict_bboxes_filt = {}
         for cls in range(1, num_classes):
             scores = predictions[:, :, cls]
             fmask = tf.cast(tf.greater_equal(scores, select_threshold), scores.dtype)
             scores = scores * fmask
-            bboxes = localization * tf.expand_dims(fmask, axis=-1)
+            bboxes = localizations * tf.expand_dims(fmask, axis=-1)
 
-            scores_filt[cls] = scores
-            bboxes_filt[cls] = bboxes
-        return scores_filt, bboxes_filt
+            dict_scores_filt[cls] = scores
+            dict_bboxes_filt[cls] = bboxes
+        return dict_scores_filt, dict_bboxes_filt
 
-def bboxes_sort(scores, bboxes, top_k=400, scope=None):
-    """Sort bounding boxes by decreasing order and keep only the top_k.
+
+def select_detected_bboxes_all_classes(predictions, localizations,
+                                     num_classes, select_threshold=0.01,
+                                     scope='detected_bboxes_select_all_class'):
+    """Select detected bboxes based on select_threshold, sort the detected bboxes
+        in argmax class by predictions.
     Arguments:
-        scores: Dictionary, item - batch_size x -1 Tensor float scores.
-        bboxes: Dictionary, item - batch_size x -1 x 4 Tensor bounding boxes.
+        predictions: batch_size x -1 x num_classes Tensor.
+        localization: batch_size x -1 x 4 Tensor.
     """
-    def gather(bboxes, idxes):
-        bboxes_gather = tf.gather(bboxes, idxes)
-        return bboxes_gather
+    with tf.name_scope(scope, values=[predictions, localizations]):
+        # Compute the max-prediction class (except background)
+        dict_scores_filt = {}
+        dict_bboxes_filt = {}
 
-    def bboxes_sort_one_class(scores, bboxes, top_k):
-        scores, idxes = tf.nn.top_k(scores, k=top_k, sorted=True)
+        max_scores = tf.reduce_max(predictions[:, :, 1:], axis=-1)
+        max_mask = tf.equal(predictions, tf.expand_dims(max_scores, axis=-1))
+        predictions = predictions * tf.cast(max_mask, predictions.dtype)
 
+        for cls in range(1, num_classes):
+            scores = predictions[:, :, cls]
+            fmask = tf.cast(tf.greater_equal(scores, select_threshold), scores.dtype)
+            scores = scores * fmask
+            bboxes = localizations * tf.expand_dims(fmask, axis=-1)
 
-        with tf.name_scope(scope, 'detected_bboxes_sort', )
-
-
-
+            dict_scores_filt[cls] = scores
+            dict_bboxes_filt[cls] = bboxes
+        return dict_scores_filt, dict_bboxes_filt
 
