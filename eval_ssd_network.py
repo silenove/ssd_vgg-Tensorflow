@@ -24,6 +24,8 @@ import tensorflow as tf
 from datasets import dataset_factory
 from nets import nets_factory, ssd_vgg_300
 from preprocessing import preprocessing_factory
+from utils.bbox_util import bboxes_matching_batch
+from utils.metrics import *
 
 slim = tf.contrib.slim
 
@@ -50,7 +52,7 @@ tf.app.flags.DEFINE_integer(
     'The number of threads used to create the batches.')
 
 tf.app.flags.DEFINE_string(
-    'dataset_name', 'imagenet', 'The name of the dataset to load.')
+    'dataset_name', 'pascal2012', 'The name of the dataset to load.')
 
 tf.app.flags.DEFINE_string(
     'dataset_split_name', 'validation', 'The name of the train/test split.')
@@ -81,6 +83,34 @@ tf.app.flags.DEFINE_integer(
 
 tf.app.flags.DEFINE_integer(
     'eval_image_size_width', None, 'Eval image width in pixel.')
+
+tf.app.flags.DEFINE_integer(
+    'select_threshold', 0.01, 'selection threshold.'
+)
+
+tf.app.flags.DEFINE_integer(
+    'nms_threshold', 0.5, 'Non-Maximum selection threshold.'
+)
+
+tf.app.flags.DEFINE_integer(
+    'select_top_k', 400, 'select top k bboxes per class.'
+)
+
+tf.app.flags.DEFINE_integer(
+    'keep_top_k', 200, 'Non-Maximum selection keep top k bboxes per class.'
+)
+
+tf.app.flags.DEFINE_boolean(
+    'remove_difficult', True, 'Remove difficult objects from evaluation.'
+)
+
+tf.app.flags.DEFINE_float(
+    'matching_threshold', 0.5, 'bboxes matching threshold.'
+)
+
+tf.app.flags.DEFINE_float(
+    'gpu_memory_fraction', 0.8, 'GPU memory using fraction.'
+)
 
 FLAGS = tf.app.flags.FLAGS
 
@@ -121,6 +151,11 @@ def main(_):
         [image, labels, bboxes] = provider.get(['image', 'object/label', 'object/bbox'])
         labels -= FLAGS.labels_offset
 
+        if FLAGS.remove_difficult:
+            difficults_gt = provider.get(['object/difficult'])
+        else:
+            difficults_gt = tf.zeros(tf.shape(labels), dtype=tf.int64)
+
         #####################################
         # Select the preprocessing function #
         #####################################
@@ -138,8 +173,9 @@ def main(_):
         anchors = ssd_model.anchors_for_all_layer()
         labels_en, scores_en, bboxes_en = ssd_model.bboxes_encode(anchors, labels_gt, bboxes_gt)
 
-        images, labels_gt, bboxes_gt, labels_en, scores_en, bboxes_en = tf.train.batch(
-            [image, labels_gt, bboxes_gt, labels_en, scores_en, bboxes_en],
+        images, labels_gt, bboxes_gt, difficults_gt, labels_en, scores_en, bboxes_en = \
+            tf.train.batch(
+            [image, labels_gt, bboxes_gt, difficults_gt,labels_en, scores_en, bboxes_en],
             batch_size=FLAGS.batch_size,
             num_threads=FLAGS.num_preprocessing_threads,
             capacity=5 * FLAGS.batch_size)
@@ -154,6 +190,17 @@ def main(_):
         with tf.device('/device:CPU:0'):
             # Detect objects from SSD Model outputs
             locs_aggr = ssd_model.bboxes_decode(locs, anchors)
+            scores_nms, bboxes_nms = ssd_model.detected_bboxes(logits,
+                                                               locs_aggr,
+                                                               FLAGS.select_threshold,
+                                                               FLAGS.nms_threshold,
+                                                               FLAGS.select_top_k,
+                                                               FLAGS.keep_top_k)
+
+            num_bboxes_gt, tp, fp = bboxes_matching_batch(scores_nms.keys(), scores_nms,
+                                                          bboxes_nms, labels_gt, bboxes_gt,
+                                                          difficults_gt,
+                                                          matching_threshold=FLAGS.matching_threshold)
 
         if FLAGS.moving_average_decay:
             variable_averages = tf.train.ExponentialMovingAverage(
@@ -164,22 +211,57 @@ def main(_):
         else:
             variables_to_restore = slim.get_variables_to_restore()
 
-        predictions = tf.argmax(logits, 1)
-        labels = tf.squeeze(labels)
 
         # Define the metrics:
-        names_to_values, names_to_updates = slim.metrics.aggregate_metric_map({
-            'Accuracy': slim.metrics.streaming_accuracy(predictions, labels),
-            'Recall_5': slim.metrics.streaming_recall_at_k(
-                logits, labels, 5),
-        })
+        with tf.device('/device:CPU:0'):
+            dict_metrics = {}
+            # First add all losses.
+            for loss in tf.get_collection(tf.GraphKeys.LOSSES):
+                dict_metrics[loss.op.name] = slim.metrics.streaming_mean(loss)
+            # Extra losses as well.
+            for loss in tf.get_collection('EXTRA_LOSSES'):
+                dict_metrics[loss.op.name] = slim.metrics.streaming_mean(loss)
 
-        # Print the summaries to screen.
-        for name, value in names_to_values.items():
-            summary_name = 'eval/%s' % name
-            op = tf.summary.scalar(summary_name, value, collections=[])
-            op = tf.Print(op, [value], summary_name)
+            # Add metrics to summaries and Print on screen.
+            for name, metric in dict_metrics.items():
+                # summary_name = 'eval/%s' % name
+                summary_name = name
+                op = tf.summary.scalar(summary_name, metric[0], collections=[])
+                # op = tf.Print(op, [metric[0]], summary_name)
+                tf.add_to_collection(tf.GraphKeys.SUMMARIES, op)
+
+            # FP and TP metrics.
+            tp_fp_metric = streaming_tp_fp_arrays(num_bboxes_gt, tp, fp, scores_nms)
+            for c in tp_fp_metric[0].keys():
+                dict_metrics['tp_fp_%s' % c] = (tp_fp_metric[0][c],
+                                                tp_fp_metric[1][c])
+
+            # Add to summaries precision/recall values.
+            aps_voc12 = {}
+            for c in tp_fp_metric[0].keys():
+                # Precison and recall values.
+                prec, rec = precision_recall(*tp_fp_metric[0][c])
+
+                # Average precision VOC12.
+                v = average_precision_voc12(prec, rec)
+                summary_name = 'AP_VOC12/%s' % c
+                op = tf.summary.scalar(summary_name, v, collections=[])
+                # op = tf.Print(op, [v], summary_name)
+                tf.add_to_collection(tf.GraphKeys.SUMMARIES, op)
+                aps_voc12[c] = v
+
+            # Mean average precision VOC12.
+            summary_name = 'AP_VOC12/mAP'
+            mAP = tf.add_n(list(aps_voc12.values())) / len(aps_voc12)
+            op = tf.summary.scalar(summary_name, mAP, collections=[])
+            op = tf.Print(op, [mAP], summary_name)
             tf.add_to_collection(tf.GraphKeys.SUMMARIES, op)
+
+        # Split into values and updates ops.
+        names_to_values, names_to_updates = slim.metrics.aggregate_metric_map(dict_metrics)
+
+        gpu_options = tf.GPUOptions(per_process_gpu_memory_fraction=FLAGS.gpu_memory_fraction)
+        config = tf.ConfigProto(log_device_placement=False, gpu_options=gpu_options)
 
         # TODO(sguada) use num_epochs=1
         if FLAGS.max_num_batches:

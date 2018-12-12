@@ -156,3 +156,112 @@ def bboxes_intersection(bbox_ref, bboxes, name=None):
         scores = tf.where(tf.greater(bboxes_vol, 0.), tf.divide(inter_vol, bboxes_vol),
                           tf.zeros_like(inter_vol), name='intersection')
         return scores
+
+def bboxes_jaccard(bbox_ref, bboxes, name=None):
+    """Compute jaccard score between a reference box and a collection of
+    bounding boxes.
+    """
+    with tf.name_scope(name, 'bboxes_jaccard'):
+        bboxes = tf.transpose(bboxes)
+        bbox_ref = tf.transpose(bbox_ref)
+
+        int_ymin = tf.maximum(bboxes[0], bbox_ref[0])
+        int_xmin = tf.maximum(bboxes[1], bbox_ref[1])
+        int_ymax = tf.minimum(bboxes[2], bbox_ref[2])
+        int_xmax = tf.minimum(bboxes[3], bbox_ref[3])
+        h = tf.maximum(int_ymax - int_ymin, 0.)
+        w = tf.maximum(int_xmax - int_xmin, 0.)
+        inter_vol = h * w
+        union_vol = (bboxes[2] - bboxes[0]) * (bboxes[3] - bboxes[1]) + \
+                    (bbox_ref[2] - bbox_ref[0]) * (bbox_ref[3] - bbox_ref[1]) - \
+                    inter_vol
+        jaccard = tf.where(tf.greater(union_vol, 0.), tf.divide(inter_vol, union_vol),
+                          tf.zeros_like(inter_vol), name='jaccard')
+        return jaccard
+
+
+def bboxes_matching(label, scores, bboxes, labels_gt, bboxes_gt,
+                    difficults_gt, matching_threshold=0.5, scope=None):
+    """Matching a collection of detected boxes with groundtruth values, single-inputs."""
+    with tf.name_scope(scope, 'bboxes_matching_single', [scores, bboxes, labels_gt,
+                                                         bboxes_gt, difficults_gt]):
+        total_size = tf.size(scores)
+        label = tf.cast(label, labels_gt.dtype)
+        difficults_gt = tf.cast(difficults_gt, tf.bool)
+        num_bboxes_gt = tf.count_nonzero(tf.logical_and(tf.equal(label, labels_gt),
+                                                        tf.logical_not(difficults_gt)))
+        matching_gt = tf.zeros(tf.shape(labels_gt), dtype=tf.bool)
+        range_gt = tf.range(tf.size(labels_gt), dtype=tf.int32)
+
+        # True/False positive matching TensorArrays
+        tensorarray_tp = tf.TensorArray(tf.bool, size=total_size, dynamic_size=False,
+                                     infer_shape=True)
+        tensorarray_fp = tf.TensorArray(tf.bool, size=total_size, dynamic_size=False,
+                                     infer_shape=True)
+
+        # Loop
+        def condition(i, ta_tp, ta_fp, matching):
+            return tf.less(i, total_size)
+
+        def body(i, ta_tp, ta_fp, matching_gt):
+            # Jaccard score with gt bboxes
+            bbox = bboxes[i]
+            jaccard = bboxes_jaccard(bbox, bboxes_gt)
+            jaccard = jaccard * tf.cast(tf.equal(label, labels_gt), jaccard.dtype)
+            max_idx = tf.cast(tf.argmax(jaccard, axis=0), tf.int32)
+            max_jaccard = jaccard[max_idx]
+            match = max_jaccard > matching_threshold
+            is_exist = matching_gt[max_idx]
+            not_difficult = tf.logical_not(difficults_gt[max_idx])
+
+            tp = tf.logical_and(not_difficult,
+                                tf.logical_and(match, tf.logical_not(is_exist)))
+            ta_tp.write(i, tp)
+            fp = tf.logical_and(not_difficult,
+                                tf.logical_or(tf.logical_not(match), is_exist))
+            ta_fp.write(i, fp)
+
+            mask = tf.logical_and(tf.equal(range_gt, max_idx),
+                                  tf.logical_and(not_difficult, match))
+            matching_gt = tf.logical_or(matching_gt, mask)
+
+            return [i+1, ta_tp, ta_fp, matching_gt]
+
+        i = 0
+        [i, tensorarray_tp, tensorarray_fp, matching_gt] = tf.while_loop(
+            condition, body, [i, tensorarray_tp, tensorarray_fp, matching_gt],
+            parallel_iterations=1, back_prop=False
+        )
+
+        tp_match = tf.reshape(tensorarray_tp.stack(), tf.shape(scores))
+        fp_match = tf.reshape(tensorarray_fp.stack(), tf.shape(scores))
+
+        return num_bboxes_gt, tp_match, fp_match
+
+
+
+def bboxes_matching_batch(labels, scores, bboxes,
+                          labels_gt, bboxes_gt, difficults_gt,
+                          matching_threshold=0.5, scope=None):
+    """Matching a collection of detected boxes with groundtruth values, batched-inputs."""
+    with tf.name_scope(scope, 'bboxes_matching_batch', [scores, bboxes, labels_gt,
+                                                        bboxes_gt, difficults_gt]):
+        dict_num_bboxes_gt = {}
+        dict_tp = {}
+        dict_fp = {}
+        for label in labels:
+            n, tp, fp = tf.map_fn(
+                lambda x: bboxes_matching(label, x[0], x[1], x[2], x[3], x[4], matching_threshold),
+                (scores, bboxes, labels_gt, bboxes_gt, difficults_gt),
+                dtype=(tf.int64, tf.bool, tf.bool),
+                parallel_iterations=10,
+                back_prop=False,
+                swap_memory=True,
+                infer_shape=True,
+            )
+            dict_num_bboxes_gt[label] = n
+            dict_tp[label] = tp
+            dict_fp[label] = fp
+        return dict_num_bboxes_gt, dict_tp, dict_fp
+
+

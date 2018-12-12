@@ -292,20 +292,20 @@ class SSDNet(object):
                                                          scope=scope)
 
     def detected_bboxes(self, predictions, localizations, select_threshold=0.01,
-                        nms_threshold=0.5):
+                        nms_threshold=0.5, top_k=400, keep_top_k=200):
         """Get the detected bounding boxes from SSD Model output."""
         scores_select, bboxes_select = network_util.select_detected_bboxes_all_classes(predictions,
                                                                            localizations,
                                                                            select_threshold)
         dict_scores_sorted, dict_bboxes_sorted = bbox_util.bboxes_sort_all_classes(scores_select,
-                                                                          bboxes_select)
+                                                                                   bboxes_select,
+                                                                                   top_k)
         dict_scores_nms, dict_bboxes_nms = bbox_util.bboxes_nms_all_classes(dict_scores_sorted,
                                                                            dict_bboxes_sorted,
                                                                            self.ssd_params.batch_size,
-                                                                           nms_threshold)
-
-
-
+                                                                           nms_threshold,
+                                                                           keep_top_k)
+        return dict_scores_nms, dict_bboxes_nms
 
     def ssd_class_and_loc_losses(self,
                                  logits_pred,

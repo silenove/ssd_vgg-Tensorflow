@@ -134,9 +134,10 @@ def jaccard_between_anchors_and_gt(anchors, bbox):
     inter_w = tf.maximum(inter_xmax - inter_xmin, 0.0)
 
     vol_anchors = (ymax - ymin) * (xmax - xmin)
-    vol_inter = tf.multiply(inter_h, inter_w)
-    vol_union = vol_anchors - vol_inter + ((bbox[2] - bbox[0]) * (bbox[3] - bbox[1]))
-    jaccard = tf.div(vol_inter, vol_union)
+    inter_vol = tf.multiply(inter_h, inter_w)
+    union_vol = vol_anchors - inter_vol + ((bbox[2] - bbox[0]) * (bbox[3] - bbox[1]))
+    jaccard = tf.where(tf.greater(union_vol, 0.), tf.divide(inter_vol, union_vol),
+                       tf.zeros_like(inter_vol), name='jaccard')
     return jaccard
 
 
