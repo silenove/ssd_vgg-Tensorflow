@@ -93,39 +93,39 @@ class SSDNet(object):
 
             # SSD nets
             # tensor: batch_size x 38 x 38 x 512
-            net = slim.conv2d(net, 1024, [3, 3], rate=6, scope='Conv6')
+            net = slim.conv2d(net, 1024, [3, 3], rate=6, scope='conv6')
             end_points['Conv6'] = net
 
             # tensor: batch_size x 19 x 19 x 1024
-            net = slim.conv2d(net, 1024, [1, 1], stride=2, scope='Conv7')
+            net = slim.conv2d(net, 1024, [1, 1], stride=2, scope='conv7')
             end_points['Conv7'] = net
             net = slim.max_pool2d(net, [2, 2], stride=1, padding='SAME', scope='pool7')
 
             # tensor: batch_size 19 x 19 x 1024
-            net = slim.conv2d(net, 256, [1, 1], scope='Conv8_2_1x1')
-            net = slim.conv2d(net, 512, [3, 3], stride=2, scope='Conv8_2_3x3')
+            net = slim.conv2d(net, 256, [1, 1], scope='conv8_1x1')
+            net = slim.conv2d(net, 512, [3, 3], stride=2, scope='conv8_3x3')
             end_points['Conv8_2'] = net
 
             # tensor: batch_size x 10 x 10 x 512
-            net = slim.conv2d(net, 128, [1, 1], scope='Conv9_2_1x1')
-            net = slim.conv2d(net, 256, [3, 3], stride=2, scope='Conv9_2_3x3')
+            net = slim.conv2d(net, 128, [1, 1], scope='conv9_1x1')
+            net = slim.conv2d(net, 256, [3, 3], stride=2, scope='conv9_3x3')
             end_points['Conv9_2'] = net
 
             # tensor: batch_size x 5 x 5 x 256
-            net = slim.conv2d(net, 128, [1, 1], scope='Conv10_2_1x1')
-            net = slim.conv2d(net, 256, [3, 3], stride=2, scope='Conv10_2_3x3')
+            net = slim.conv2d(net, 128, [1, 1], scope='conv10_1x1')
+            net = slim.conv2d(net, 256, [3, 3], stride=2, scope='conv10_3x3')
             end_points['Conv10_2'] = net
 
             # tensor: batch_size x 3 x 3 x 256
-            net = slim.conv2d(net, 128, [1, 1], scope='Conv11_2_1x1')
-            net = slim.conv2d(net, 256, [3, 3], stride=1, padding='VALID', scope='Conv11_2_3x3')
+            net = slim.conv2d(net, 128, [1, 1], scope='conv11_1x1')
+            net = slim.conv2d(net, 256, [3, 3], stride=1, padding='VALID', scope='conv11_3x3')
             end_points['Conv11_2'] = net
             # tensor: batch_size x 1 x 1 x 256
 
             for i, layer in enumerate(self.ssd_params.featmap_layers):
                 if i == 0:
-                    # Conv4_3 layer
-                    with tf.variable_scope(layer):
+                    # conv4 layer
+                    with tf.variable_scope(layer+'_mbox'):
                         # classes
                         norm = slim.batch_norm(end_points[layer], decay=0.9997, epsilon=0.000001,
                                                        scope=layer + '_norm')
@@ -146,8 +146,8 @@ class SSDNet(object):
                                                                        scope=layer + '_norm_mbox_loc_flat')
                         end_points[layer + '_mbox_loc_flat'] = norm_mbox_loc_flat
                 else:
-                    # Conv7, Conv8_2, Conv9_2, Conv10_2, Conv11_2
-                    with tf.variable_scope(layer):
+                    # conv7, conv8, conv9, conv10, conv11
+                    with tf.variable_scope(layer+'_mbox'):
                         # classes
                         mbox_conf_perm = slim.conv2d(end_points[layer],
                                                      self.ssd_params.num_classes * self.ssd_params.num_anchors[i],

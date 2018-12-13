@@ -202,7 +202,7 @@ tf.app.flags.DEFINE_integer(
 tf.app.flags.DEFINE_integer(
     'train_image_size_width', None, 'Train image height in pixel.')
 
-tf.app.flags.DEFINE_integer('max_number_of_steps', None,
+tf.app.flags.DEFINE_integer('max_number_of_steps', 10000,
                             'The maximum number of training steps.')
 
 #####################
