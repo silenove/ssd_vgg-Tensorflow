@@ -30,8 +30,8 @@ class SSDNet(object):
             self.ssd_params = SSD_params(image_size=(300, 300),
                                          batch_size=4,
                                          num_classes=21,
-                                         featmap_layers=['Conv4_3', 'Conv7', 'Conv8_2',
-                                                         'Conv9_2', 'Conv10_2', 'Conv11_2'],
+                                         featmap_layers=['conv4', 'conv7', 'conv8',
+                                                         'conv9', 'conv10', 'conv11'],
                                          featmap_size=[(38, 38), (19, 19), (10, 10), (5, 5), (3, 3), (1, 1)], # (h, w)
                                          num_anchors=[4, 6, 6, 6, 4, 4],
                                          anchor_steps=[8, 16, 32, 64, 100, 300],
@@ -68,58 +68,58 @@ class SSDNet(object):
             # Original VGG-16 nets
             # input: batch_size x 300 x 300 x channels
             net = slim.repeat(inputs, 2, slim.conv2d, 64, [3, 3], scope='conv1')
-            end_points['Conv1_2'] = net
+            end_points['conv1'] = net
             net = slim.max_pool2d(net, [2, 2], stride=2, scope='pool1')
 
             # tensor: batch_size x 150 x 150 x 64
             net = slim.repeat(net, 2, slim.conv2d, 128, [3, 3], scope='conv2')
-            end_points['Conv2_2'] = net
+            end_points['conv2'] = net
             net = slim.max_pool2d(net, [2, 2], stride=2, scope='pool2')
 
             # tensor: batch_size x 75 x 75 x 128
             net = slim.repeat(net, 3, slim.conv2d, 256, [3, 3], scope='conv3')
-            end_points['Conv3_3'] = net
+            end_points['conv3'] = net
             net = slim.max_pool2d(net, [2, 2], stride=2, padding='SAME', scope='pool3')
 
             # tensor: batch_size x 38 x 38 x 256
             net = slim.repeat(net, 3, slim.conv2d, 512, [3, 3], scope='conv4')
-            end_points['Conv4_3'] = net
+            end_points['conv4'] = net
             net = slim.max_pool2d(net, [2, 2], stride=1, padding='SAME', scope='pool4')
 
             # tensor: batch_size x 38 x 38 x 512
             net = slim.repeat(net, 3, slim.conv2d, 512, [3, 3], scope='conv5')
-            end_points['Conv5_3'] = net
+            end_points['conv5'] = net
             net = slim.max_pool2d(net, [2, 2], stride=1, padding='SAME', scope='pool5')
 
             # SSD nets
             # tensor: batch_size x 38 x 38 x 512
             net = slim.conv2d(net, 1024, [3, 3], rate=6, scope='conv6')
-            end_points['Conv6'] = net
+            end_points['conv6'] = net
 
             # tensor: batch_size x 19 x 19 x 1024
             net = slim.conv2d(net, 1024, [1, 1], stride=2, scope='conv7')
-            end_points['Conv7'] = net
+            end_points['conv7'] = net
             net = slim.max_pool2d(net, [2, 2], stride=1, padding='SAME', scope='pool7')
 
             # tensor: batch_size 19 x 19 x 1024
             net = slim.conv2d(net, 256, [1, 1], scope='conv8_1x1')
             net = slim.conv2d(net, 512, [3, 3], stride=2, scope='conv8_3x3')
-            end_points['Conv8_2'] = net
+            end_points['conv8'] = net
 
             # tensor: batch_size x 10 x 10 x 512
             net = slim.conv2d(net, 128, [1, 1], scope='conv9_1x1')
             net = slim.conv2d(net, 256, [3, 3], stride=2, scope='conv9_3x3')
-            end_points['Conv9_2'] = net
+            end_points['conv9'] = net
 
             # tensor: batch_size x 5 x 5 x 256
             net = slim.conv2d(net, 128, [1, 1], scope='conv10_1x1')
             net = slim.conv2d(net, 256, [3, 3], stride=2, scope='conv10_3x3')
-            end_points['Conv10_2'] = net
+            end_points['conv10'] = net
 
             # tensor: batch_size x 3 x 3 x 256
             net = slim.conv2d(net, 128, [1, 1], scope='conv11_1x1')
             net = slim.conv2d(net, 256, [3, 3], stride=1, padding='VALID', scope='conv11_3x3')
-            end_points['Conv11_2'] = net
+            end_points['conv11'] = net
             # tensor: batch_size x 1 x 1 x 256
 
             for i, layer in enumerate(self.ssd_params.featmap_layers):
