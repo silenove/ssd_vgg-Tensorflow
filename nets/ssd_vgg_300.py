@@ -51,6 +51,9 @@ class SSDNet(object):
 
         self._compute_box_scales()
 
+    def set_batch_size(self, batch_size):
+        self.ssd_params = self.ssd_params._replace(batch_size=batch_size)
+
     def _ssd_vgg_300_base_network(self, inputs, scope=None):
 
         """Define the base nets of 300 VGG-based SSD.
@@ -64,58 +67,58 @@ class SSDNet(object):
         with tf.variable_scope(scope, 'ssd_vgg_300', [inputs]):
             # Original VGG-16 nets
             # input: batch_size x 300 x 300 x channels
-            net = slim.repeat(inputs, 2, slim.conv2d, 64, [3, 3], scope='Conv1_2')
+            net = slim.repeat(inputs, 2, slim.conv2d, 64, [3, 3], scope='conv1')
             end_points['Conv1_2'] = net
             net = slim.max_pool2d(net, [2, 2], stride=2, scope='pool1')
 
             # tensor: batch_size x 150 x 150 x 64
-            net = slim.repeat(net, 2, slim.conv2d, 128, [3, 3], scope='Conv2_2')
+            net = slim.repeat(net, 2, slim.conv2d, 128, [3, 3], scope='conv2')
             end_points['Conv2_2'] = net
             net = slim.max_pool2d(net, [2, 2], stride=2, scope='pool2')
 
             # tensor: batch_size x 75 x 75 x 128
-            net = slim.repeat(net, 3, slim.conv2d, 256, [3, 3], scope='Conv3_3')
+            net = slim.repeat(net, 3, slim.conv2d, 256, [3, 3], scope='conv3')
             end_points['Conv3_3'] = net
             net = slim.max_pool2d(net, [2, 2], stride=2, padding='SAME', scope='pool3')
 
             # tensor: batch_size x 38 x 38 x 256
-            net = slim.repeat(net, 3, slim.conv2d, 512, [3, 3], scope='Conv4_3')
+            net = slim.repeat(net, 3, slim.conv2d, 512, [3, 3], scope='conv4')
             end_points['Conv4_3'] = net
             net = slim.max_pool2d(net, [2, 2], stride=1, padding='SAME', scope='pool4')
 
             # tensor: batch_size x 38 x 38 x 512
-            net = slim.repeat(net, 3, slim.conv2d, 512, [3, 3], scope='Conv5_3')
+            net = slim.repeat(net, 3, slim.conv2d, 512, [3, 3], scope='conv5')
             end_points['Conv5_3'] = net
             net = slim.max_pool2d(net, [2, 2], stride=1, padding='SAME', scope='pool5')
 
             # SSD nets
             # tensor: batch_size x 38 x 38 x 512
-            net = slim.conv2d(net, 1024, [3, 3], scope='Conv6')
+            net = slim.conv2d(net, 1024, [3, 3], rate=6, scope='Conv6')
             end_points['Conv6'] = net
 
             # tensor: batch_size x 19 x 19 x 1024
-            net = slim.conv2d(net, 1024, [1, 1], scope='Conv7')
+            net = slim.conv2d(net, 1024, [1, 1], stride=2, scope='Conv7')
             end_points['Conv7'] = net
             net = slim.max_pool2d(net, [2, 2], stride=1, padding='SAME', scope='pool7')
 
             # tensor: batch_size 19 x 19 x 1024
-            net = slim.conv2d(net, 256, [1, 1], scope='Conv8_2')
-            net = slim.conv2d(net, 512, [3, 3], stride=2, scope='Conv8_2')
+            net = slim.conv2d(net, 256, [1, 1], scope='Conv8_2_1x1')
+            net = slim.conv2d(net, 512, [3, 3], stride=2, scope='Conv8_2_3x3')
             end_points['Conv8_2'] = net
 
             # tensor: batch_size x 10 x 10 x 512
-            net = slim.conv2d(net, 128, [1, 1], scope='Conv9_2')
-            net = slim.conv2d(net, 256, [3, 3], stride=2, scope='Conv9_2')
+            net = slim.conv2d(net, 128, [1, 1], scope='Conv9_2_1x1')
+            net = slim.conv2d(net, 256, [3, 3], stride=2, scope='Conv9_2_3x3')
             end_points['Conv9_2'] = net
 
             # tensor: batch_size x 5 x 5 x 256
-            net = slim.conv2d(net, 128, [1, 1], scope='Conv10_2')
-            net = slim.conv2d(net, 256, [3, 3], stride=2, scope='Conv10_2')
+            net = slim.conv2d(net, 128, [1, 1], scope='Conv10_2_1x1')
+            net = slim.conv2d(net, 256, [3, 3], stride=2, scope='Conv10_2_3x3')
             end_points['Conv10_2'] = net
 
             # tensor: batch_size x 3 x 3 x 256
-            net = slim.conv2d(net, 128, [1, 1], scope='Conv11_2')
-            net = slim.conv2d(net, 256, [3, 3], stride=1, padding='VALID', scope='Conv11_2')
+            net = slim.conv2d(net, 128, [1, 1], scope='Conv11_2_1x1')
+            net = slim.conv2d(net, 256, [3, 3], stride=1, padding='VALID', scope='Conv11_2_3x3')
             end_points['Conv11_2'] = net
             # tensor: batch_size x 1 x 1 x 256
 
@@ -221,11 +224,13 @@ class SSDNet(object):
         Return:
             y, x, w, h: the anchors coordinate.
         """
-        y, x = np.mgrid[0:self.ssd_params.featmap_layers[layer_idx][0],
-               0:self.ssd_params.featmap_layers[layer_idx][1]]
-        y = ((y + self.ssd_params.anchor_offset) * self.ssd_params.anchor_steps[layer_idx][0]) / \
+        y, x = np.mgrid[0:self.ssd_params.featmap_size[layer_idx][0],
+               0:self.ssd_params.featmap_size[layer_idx][1]]
+        y = y.astype(dtype)
+        x = x.astype(dtype)
+        y = ((y + self.ssd_params.anchor_offset) * self.ssd_params.anchor_steps[layer_idx]) / \
             self.ssd_params.image_size[0]
-        x = ((x + self.ssd_params.anchor_offset) * self.ssd_params.anchor_steps[layer_idx][1]) / \
+        x = ((x + self.ssd_params.anchor_offset) * self.ssd_params.anchor_steps[layer_idx]) / \
             self.ssd_params.image_size[1]
 
         # Change the shape to h x w x num_anchors.
@@ -256,9 +261,9 @@ class SSDNet(object):
             else:
                 for a_r in self.ssd_params.anchor_ratios:
                     h[i] = self.ssd_params.box_scales[layer_idx] * \
-                           np.sqrt(self.ssd_params.anchor_ratios[i - 1])
+                           np.sqrt(self.ssd_params.anchor_ratios[i - 1][0])
                     w[i] = self.ssd_params.box_scales[layer_idx] / \
-                           np.sqrt(self.ssd_params.anchor_ratios[i - 1])
+                           np.sqrt(self.ssd_params.anchor_ratios[i - 1][1])
 
         return y, x, h, w
 
@@ -279,9 +284,9 @@ class SSDNet(object):
                                                                             match_threshold,
                                                                             dtype,
                                                                             scope)
-        labels = tf.concat(labels, axis=0)
-        scores = tf.concat(scores, axis=0)
-        locs = tf.concat(locs, axis=0)
+        labels = tf.concat([tf.reshape(x, [-1]) for x in labels], axis=0)
+        scores = tf.concat([tf.reshape(x, [-1]) for x in scores], axis=0)
+        locs = tf.concat([tf.reshape(x, [-1]) for x in locs], axis=0)
         return labels, scores, locs
 
     def bboxes_decode(self, locs_pred, anchors, scope='ssd_bboxes_decode'):
@@ -332,7 +337,7 @@ class SSDNet(object):
             classes_gt_flat = tf.reshape(classes_gt, [-1])
             localization_gt_flat = tf.reshape(localization_gt, [-1, 4])
             scores_gt_flat = tf.reshape(scores_gt, [-1])
-            dtype = classes_gt_flat.dtype
+            dtype = logits_pred_flat.dtype
 
             # Compute positive matching mask
             posi_mask = scores_gt_flat > match_threshold
@@ -343,7 +348,7 @@ class SSDNet(object):
             neg_mask = tf.logical_not(posi_mask)
             f_neg_mask = tf.cast(neg_mask, dtype)
             logits_pred_softmax = slim.softmax(logits_pred_flat)
-            neg_values = tf.where(neg_mask, logits_pred_softmax[:, 0], 1.)
+            neg_values = tf.where(neg_mask, logits_pred_softmax[:, 0], 1. - f_neg_mask)
 
             # Number of negative entries to select.
             max_neg_entries = tf.cast(tf.reduce_sum(f_neg_mask), tf.int32)
@@ -359,7 +364,7 @@ class SSDNet(object):
             with tf.name_scope('cross_entropy'):
                 loss = tf.nn.sparse_softmax_cross_entropy_with_logits(logits=logits_pred_flat,
                                                                       labels=classes_gt_flat)
-                loss_posi = tf.div(tf.reduce_sum(loss * posi_mask), self.ssd_params.batch_size,
+                loss_posi = tf.div(tf.reduce_sum(loss * f_posi_mask), self.ssd_params.batch_size,
                                    name='positive_loss')
                 loss_neg = tf.div(tf.reduce_sum(loss * f_neg_mask), self.ssd_params.batch_size,
                                   name='negative_loss')
@@ -367,7 +372,7 @@ class SSDNet(object):
                 tf.losses.add_loss(loss_neg)
             with tf.name_scope('localization_loss'):
                 loss = network_util.abs_smooth_L1(localization_pred_flat - localization_gt_flat)
-                loss_loc = tf.div(tf.reduce_sum(loss * f_posi_mask) * alpha,
+                loss_loc = tf.div(tf.reduce_sum(loss * tf.expand_dims(f_posi_mask, axis=-1)) * alpha,
                                   self.ssd_params.batch_size,
                                   name='localization_loss')
                 tf.losses.add_loss(loss_loc)

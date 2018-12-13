@@ -142,10 +142,7 @@ def jaccard_between_anchors_and_gt(anchors, bbox):
 
 
 def abs_smooth_L1(x):
-    if tf.less(tf.abs(x), 1):
-        return 0.5 * tf.pow(x, 2)
-    else:
-        return tf.abs(x) - 0.5
+    return tf.where(tf.less(tf.abs(x), 1), 0.5 * tf.pow(x, 2), tf.abs(x) - 0.5)
 
 
 def decode_bboxes_from_all_layer(locs_pred, anchors,

@@ -423,6 +423,7 @@ def main(_):
         # Select the nets #
         ######################
         ssd_model = ssd_vgg_300.SSDNet()
+        ssd_model.ssd_params.batch_size = FLAGS.batch_size
         network_fn = nets_factory.get_network_fn(
             ssd_model,
             weight_decay=FLAGS.weight_decay,

@@ -32,7 +32,7 @@ VOC_LABELS = {
 
 TOTAL_SIZE = 17125
 
-SPLIT_TO_SIZES = {'train': 16125, 'validation': 1000}
+SPLIT_TO_SIZES = {'train': 14125, 'validation': 3000}
 
 NUM_CLASSES = 21  # include background
 
@@ -80,7 +80,7 @@ def get_split(split_name, dataset_dir, file_pattern=None, reader=None):
         'image/width': slim.tfexample_decoder.Tensor('image/width'),
         'image/channels': slim.tfexample_decoder.Tensor('image/channels'),
         'object/bbox': slim.tfexample_decoder.BoundingBox(
-            ['ymin', 'xmin', 'ymax', 'xmax'], 'image/object/bbox'
+            ['ymin', 'xmin', 'ymax', 'xmax'], 'image/object/bbox/'
         ),
         'object/label': slim.tfexample_decoder.Tensor('image/object/bbox/label'),
         'object/difficult': slim.tfexample_decoder.Tensor('image/object/bbox/difficult'),

@@ -62,8 +62,8 @@ def random_flip_left_right(image, bboxes, seed=None):
 
     with tf.name_scope('random_flip_left_right'):
         cond = tf.less(tf.random_uniform([], 0., 1., seed=seed), 0.5)
-        image = tf.cond(cond, tf.image.flip_left_right(image), image)
-        bboxes = tf.cond(cond, flip_bboxes(bboxes), bboxes)
+        image = tf.cond(cond, lambda: tf.image.flip_left_right(image), lambda: image)
+        bboxes = tf.cond(cond, lambda: flip_bboxes(bboxes), lambda: bboxes)
         return image, bboxes
 
 
@@ -209,7 +209,7 @@ def preprocess_for_train(image, labels, bboxes, out_height, out_width, bbox,
         dst_image = tf.image.resize_images(dst_image, [out_height, out_width])
         dst_image, dst_bboxes = random_flip_left_right(dst_image, dst_bboxes)
         dst_image = apply_with_random_selector(dst_image,
-                                               lambda x, order: distort_color(image, order, fast_mode),
+                                               lambda x, order: distort_color(x, order, fast_mode),
                                                num_cases=4)
         image = dst_image * 255.
         return image, labels, bboxes
