@@ -54,7 +54,7 @@ class SSDNet(object):
     def set_batch_size(self, batch_size):
         self.ssd_params = self.ssd_params._replace(batch_size=batch_size)
 
-    def _ssd_vgg_300_base_network(self, inputs, scope=None):
+    def _ssd_vgg_300_base_network(self, inputs, reuse=None, scope=None):
 
         """Define the base nets of 300 VGG-based SSD.
         input image : batch_size x 300 x 300 x channels.
@@ -64,7 +64,7 @@ class SSDNet(object):
         """
         end_points = {}
 
-        with tf.variable_scope(scope, 'ssd_vgg_300', [inputs]):
+        with tf.variable_scope(scope, 'ssd_vgg_300', [inputs], reuse=reuse):
             # Original VGG-16 nets
             # input: batch_size x 300 x 300 x channels
             net = slim.repeat(inputs, 2, slim.conv2d, 64, [3, 3], scope='conv1')
@@ -182,11 +182,10 @@ class SSDNet(object):
     def ssd_vgg_300_net(self, inputs, is_training=True, reuse=None, scope='ssd_vgg_300'):
         """Creates the 300 VGG-based SSD model."""
         end_points = {}
-        with tf.variable_scope(scope, 'ssd_vgg_300', [inputs], reuse=reuse) as scope:
-            with slim.arg_scope([slim.batch_norm], is_training=is_training):
-                logits, locs, end_points = self._ssd_vgg_300_base_network(inputs, scope=scope)
+        with slim.arg_scope([slim.batch_norm], is_training=is_training):
+            logits, locs, end_points = self._ssd_vgg_300_base_network(inputs, reuse, scope=scope)
 
-                return logits, locs, end_points
+            return logits, locs, end_points
 
 
     def ssd_arg_scope(self,
