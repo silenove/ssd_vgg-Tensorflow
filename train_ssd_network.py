@@ -227,6 +227,10 @@ tf.app.flags.DEFINE_boolean(
     'ignore_missing_vars', False,
     'When restoring a checkpoint would ignore missing variables.')
 
+tf.app.flags.DEFINE_string(
+    'checkpoint_model_scope', None, 'Model scope in the checkpoint.'
+)
+
 FLAGS = tf.app.flags.FLAGS
 
 DATA_FORMAT = 'NHWC'
@@ -361,6 +365,12 @@ def _get_init_fn():
                 break
         else:
             variables_to_restore.append(var)
+
+    if FLAGS.checkpoint_model_scope is not None:
+        variables_to_restore = {
+            var.op.name.replace(FLAGS.model_name, FLAGS.checkpoint_model_scope): var
+            for var in variables_to_restore
+        }
 
     if tf.gfile.IsDirectory(FLAGS.checkpoint_path):
         checkpoint_path = tf.train.latest_checkpoint(FLAGS.checkpoint_path)
