@@ -89,7 +89,7 @@ def bboxes_nms_all_classes(dict_scores_sorted, dict_bboxes_sorted, batch_size,
         scores_batches = []
         bboxes_batches = []
         for i in range(batch_size):
-            idxes = tf.image.non_max_suppression_padded(bboxes_sorted[i],
+            idxes, _ = tf.image.non_max_suppression_padded(bboxes_sorted[i],
                                                         scores_sorted[i],
                                                         keep_top_k,
                                                         nms_threshold,
@@ -110,8 +110,8 @@ def bboxes_nms_all_classes(dict_scores_sorted, dict_bboxes_sorted, batch_size,
             scores_nms, bboxes_nms = bboxes_nms_one_class(dict_scores_sorted[cls],
                                                           dict_bboxes_sorted[cls],
                                                           batch_size,
-                                                          keep_top_k,
-                                                          nms_threshold)
+                                                          nms_threshold,
+                                                          keep_top_k)
             dict_scores_nms[cls] = scores_nms
             dict_bboxes_nms[cls] = bboxes_nms
         return dict_scores_nms, dict_bboxes_nms
@@ -201,7 +201,8 @@ def bboxes_matching(label, scores, bboxes, labels_gt, bboxes_gt,
 
         # Loop
         def condition(i, ta_tp, ta_fp, matching):
-            return tf.less(i, total_size)
+            r = tf.less(i, total_size)
+            return r
 
         def body(i, ta_tp, ta_fp, matching_gt):
             # Jaccard score with gt bboxes
@@ -216,10 +217,10 @@ def bboxes_matching(label, scores, bboxes, labels_gt, bboxes_gt,
 
             tp = tf.logical_and(not_difficult,
                                 tf.logical_and(match, tf.logical_not(is_exist)))
-            ta_tp.write(i, tp)
+            ta_tp = ta_tp.write(i, tp)
             fp = tf.logical_and(not_difficult,
                                 tf.logical_or(tf.logical_not(match), is_exist))
-            ta_fp.write(i, fp)
+            ta_fp = ta_fp.write(i, fp)
 
             mask = tf.logical_and(tf.equal(range_gt, max_idx),
                                   tf.logical_and(not_difficult, match))
@@ -252,7 +253,7 @@ def bboxes_matching_batch(labels, scores, bboxes,
         for label in labels:
             n, tp, fp = tf.map_fn(
                 lambda x: bboxes_matching(label, x[0], x[1], x[2], x[3], x[4], matching_threshold),
-                (scores, bboxes, labels_gt, bboxes_gt, difficults_gt),
+                (scores[label], bboxes[label], labels_gt, bboxes_gt, difficults_gt),
                 dtype=(tf.int64, tf.bool, tf.bool),
                 parallel_iterations=10,
                 back_prop=False,

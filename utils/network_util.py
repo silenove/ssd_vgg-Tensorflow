@@ -33,8 +33,8 @@ def encode_gtbboxes_from_one_layer(ssd_params,
 
     target_ymin = tf.zeros(shape_ref, dtype=dtype)
     target_xmin = tf.zeros(shape_ref, dtype=dtype)
-    target_ymax = tf.zeros(shape_ref, dtype=dtype)
-    target_xmax = tf.zeros(shape_ref, dtype=dtype)
+    target_ymax = tf.ones(shape_ref, dtype=dtype)
+    target_xmax = tf.ones(shape_ref, dtype=dtype)
 
     def condition(i, anchor_labels, anchor_scores, target_ymin,
                   target_xmin, target_ymax, target_xmax):
@@ -126,10 +126,10 @@ def jaccard_between_anchors_and_gt(anchors, bbox):
         bbox: a box coordinates: [ymin, xmin, ymax, xmax], shape: (4,)
     """
     ymin, xmin, ymax, xmax = anchors
-    inter_ymin = tf.minimum(ymin, bbox[0])
-    inter_xmin = tf.minimum(xmin, bbox[1])
-    inter_ymax = tf.maximum(ymax, bbox[2])
-    inter_xmax = tf.maximum(xmax, bbox[3])
+    inter_ymin = tf.maximum(ymin, bbox[0])
+    inter_xmin = tf.maximum(xmin, bbox[1])
+    inter_ymax = tf.minimum(ymax, bbox[2])
+    inter_xmax = tf.minimum(xmax, bbox[3])
     inter_h = tf.maximum(inter_ymax - inter_ymin, 0.0)
     inter_w = tf.maximum(inter_xmax - inter_xmin, 0.0)
 

@@ -290,6 +290,20 @@ class SSDNet(object):
 
     def bboxes_decode(self, locs_pred, anchors, scope='ssd_bboxes_decode'):
         """Decode labels and bounding boxes."""
+        bboxes = []
+        for i, layer in enumerate(self.ssd_params.featmap_layers):
+            y, x, h, w = anchors[layer]
+            featmap_h = self.ssd_params.featmap_size[i][0]
+            featmap_w = self.ssd_params.featmap_size[i][1]
+            h = tf.reshape(tf.concat([h]*featmap_h*featmap_w, axis=-1),
+                           [featmap_h, featmap_w, -1])
+            w = tf.reshape(tf.concat([w]*featmap_h*featmap_w, axis=-1),
+                           [featmap_h, featmap_w, -1])
+            bboxes.append(tf.reshape(tf.stack([y,x,h,w], axis=-1), [-1, 4]))
+        bboxes = tf.concat(bboxes, axis=0)
+        bboxes_batches = tf.concat([tf.expand_dims(bboxes, axis=0)]*self.ssd_params.batch_size, axis=0)
+        anchors = [bboxes_batches[:, :, 0], bboxes_batches[:, :, 1],
+                   bboxes_batches[:, :, 2], bboxes_batches[:, :, 3]]
         return network_util.decode_bboxes_from_all_layer(locs_pred,
                                                          anchors,
                                                          prior_scaling=self.ssd_params.prior_variance,
@@ -300,6 +314,7 @@ class SSDNet(object):
         """Get the detected bounding boxes from SSD Model output."""
         scores_select, bboxes_select = network_util.select_detected_bboxes_all_classes(predictions,
                                                                            localizations,
+                                                                           self.ssd_params.num_classes,
                                                                            select_threshold)
         dict_scores_sorted, dict_bboxes_sorted = bbox_util.bboxes_sort_all_classes(scores_select,
                                                                                    bboxes_select,
@@ -363,16 +378,16 @@ class SSDNet(object):
             with tf.name_scope('cross_entropy'):
                 loss = tf.nn.sparse_softmax_cross_entropy_with_logits(logits=logits_pred_flat,
                                                                       labels=classes_gt_flat)
-                loss_posi = tf.div(tf.reduce_sum(loss * f_posi_mask), self.ssd_params.batch_size,
+                loss_posi = tf.div(tf.reduce_sum(loss * f_posi_mask), tf.reduce_sum(f_posi_mask),
                                    name='positive_loss')
-                loss_neg = tf.div(tf.reduce_sum(loss * f_neg_mask), self.ssd_params.batch_size,
+                loss_neg = tf.div(tf.reduce_sum(loss * f_neg_mask), tf.reduce_sum(f_neg_mask),
                                   name='negative_loss')
                 tf.losses.add_loss(loss_posi)
                 tf.losses.add_loss(loss_neg)
             with tf.name_scope('localization_loss'):
                 loss = network_util.abs_smooth_L1(localization_pred_flat - localization_gt_flat)
                 loss_loc = tf.div(tf.reduce_sum(loss * tf.expand_dims(f_posi_mask, axis=-1)) * alpha,
-                                  self.ssd_params.batch_size,
+                                  tf.reduce_sum(f_posi_mask),
                                   name='localization_loss')
                 tf.losses.add_loss(loss_loc)
 

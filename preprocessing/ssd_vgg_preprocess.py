@@ -239,7 +239,7 @@ def preprocess_for_eval(image, labels, bboxes,
         return image, labels, bboxes
 
 
-def preprocess_image(image,
+def  preprocess_image(image,
                      labels,
                      bboxes,
                      out_height=EVAL_SIZE[0], out_width=EVAL_SIZE[1],

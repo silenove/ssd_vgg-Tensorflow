@@ -84,11 +84,11 @@ tf.app.flags.DEFINE_integer(
 tf.app.flags.DEFINE_integer(
     'eval_image_size_width', None, 'Eval image width in pixel.')
 
-tf.app.flags.DEFINE_integer(
+tf.app.flags.DEFINE_float(
     'select_threshold', 0.01, 'selection threshold.'
 )
 
-tf.app.flags.DEFINE_integer(
+tf.app.flags.DEFINE_float(
     'nms_threshold', 0.5, 'Non-Maximum selection threshold.'
 )
 
@@ -135,17 +135,15 @@ def main(_):
         # Select the model #
         ####################
         ssd_model = ssd_vgg_300.SSDNet()
+        ssd_model.set_batch_size(FLAGS.batch_size)
         network_fn = nets_factory.get_network_fn(
-            ssd_model,
-            weight_decay=FLAGS.weight_decay,
-            is_training=False)
+            ssd_model, is_training=False)
 
         ##############################################################
         # Create a dataset provider that loads data from the dataset #
         ##############################################################
         provider = slim.dataset_data_provider.DatasetDataProvider(
             dataset,
-            num_readers=FLAGS.num_readers,
             common_queue_capacity=20 * FLAGS.batch_size,
             common_queue_min=10 * FLAGS.batch_size)
         [image, labels, bboxes] = provider.get(['image', 'object/label', 'object/bbox'])
@@ -178,7 +176,8 @@ def main(_):
             [image, labels_gt, bboxes_gt, difficults_gt,labels_en, scores_en, bboxes_en],
             batch_size=FLAGS.batch_size,
             num_threads=FLAGS.num_preprocessing_threads,
-            capacity=5 * FLAGS.batch_size)
+            capacity=5 * FLAGS.batch_size,
+            dynamic_pad=True)
 
         ################################
         # SSD Model + outputs decoding #
